@@ -1,177 +1,182 @@
 import streamlit as st
 from groq import Groq
+from supabase import create_client, Client
 import datetime
 import base64
 
 
-st.set_page_config(page_title="RECON API - Terminal", page_icon="🕵️‍♂️", layout="wide")
+try:
+    url: str = st.secrets["SUPABASE_URL"]
+    key: str = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(url, key)
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+except Exception as e:
+    st.error("ERREUR : Secrets manquants (SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY)")
 
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "full_history" not in st.session_state:
-    st.session_state.full_history = []
-if "credits" not in st.session_state:
-    st.session_state.credits = 5
+st.set_page_config(page_title="ReconXAI - Kali Terminal", page_icon="🕵️‍♂️", layout="wide")
 
 
 def encode_image(image_file):
     return base64.b64encode(image_file.read()).decode('utf-8')
 
+def sign_in(email, password):
+    try:
+        return supabase.auth.sign_in_with_password({"email": email, "password": password})
+    except:
+        return None
+
+def sign_up(email, password, username):
+    try:
+        res = supabase.auth.sign_up({"email": email, "password": password})
+        if res.user:
+            supabase.table("profiles").insert({
+                "id": res.user.id, 
+                "username": username, 
+                "rank": "USER", 
+                "credits": 10
+            }).execute()
+            return True
+    except Exception as e:
+        st.error(f"Erreur inscription: {e}")
+        return False
+
 
 st.markdown("""
     <style>
-    .stApp { background-color: #050505; color: #e0e0e0; }
-    
-    /* Header avec Avatar Custom */
-    .credit-header {
-        background: rgba(15, 15, 15, 0.95);
-        border: 1px solid #1f1f1f;
-        padding: 15px 25px; border-radius: 12px;
-        display: flex; align-items: center; justify-content: space-between;
-        margin-bottom: 25px; border-left: 5px solid #ff4b4b;
+    .stApp { background-color: #0f111a; color: #a9b1d6; font-family: 'Fira Code', monospace; }
+    .kali-panel { 
+        background: #1a1b26; border: 1px solid #3b4261; padding: 15px; 
+        border-radius: 4px; border-top: 3px solid #7aa2f7; margin-bottom: 20px;
     }
-    .user-avatar { width: 55px; height: 55px; border-radius: 50%; border: 2px solid #ff4b4b; object-fit: cover; }
-    .credit-amount { color: #ff4b4b; font-weight: bold; font-size: 1.3rem; }
-    
-    /* Boutique plein écran */
-    .shop-container {
-        background: #0d0d0d; border: 1px solid #ff4b4b;
-        padding: 40px; border-radius: 15px; text-align: center;
-        margin: 50px auto; max-width: 800px;
+    .stButton>button { 
+        width: 100%; border: 1px solid #3b4261; background: #16161e; color: #7aa2f7; 
+        border-radius: 2px; text-transform: uppercase; font-size: 0.8rem;
     }
-    .shop-card {
-        background: #151515; border: 1px solid #333;
-        padding: 20px; border-radius: 10px; margin: 10px;
-        display: inline-block; width: 280px; vertical-align: top;
-    }
-    
-    /* Sidebar et Logs */
-    .log-title { color: #ff4b4b; font-weight: bold; margin-top: 25px; border-bottom: 1px solid #1f1f1f; padding-bottom: 5px; }
-    .stChatMessage { background-color: #0d0d0d !important; border: 1px solid #1a1a1a !important; border-radius: 10px !important; }
+    .stButton>button:hover { border-color: #7aa2f7; color: #bb9af7; }
+    .stChatMessage { background-color: #1a1b26 !important; border: 1px solid #3b4261 !important; }
+    code { color: #9ece6a !important; background: #24283b !important; }
     </style>
     """, unsafe_allow_html=True)
 
 
-try:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-except:
-    st.error("GROQ_API_KEY manquante dans les Secrets.")
+if "user" not in st.session_state:
+    st.session_state.user = None
 
-
-with st.sidebar:
-    st.title("📡 RECON HUB")
+if st.session_state.user is None:
     
+    st.title("🐉 ReconXAI - Authentification")
+    t1, t2 = st.tabs(["Connexion", "Création de compte"])
     
-    access_code = st.text_input("Saisir code d'accès :", type="password")
-    if access_code == "OWNER_RECON_2026":
-        rank, user_name, credits_val = "OWNER", "RECON_ROOT", "∞"
-    else:
-        rank, user_name, credits_val = "FREE", "CIVILIAN", str(st.session_state.credits)
-
-   
-    st.markdown('<div class="log-title">📸 ANALYSE IMAGE</div>', unsafe_allow_html=True)
-    uploaded_file = st.file_uploader("Upload une capture (Bug/Script)", type=["png", "jpg", "jpeg"])
-
-    
-    st.markdown('<div class="log-title">📜 LOGS DE SESSION</div>', unsafe_allow_html=True)
-    if not st.session_state.full_history:
-        st.caption("Aucune archive.")
-    else:
-        for log in reversed(st.session_state.full_history):
-            with st.expander(f"🕒 {log['time']} | {log['query']}"):
-                st.code(log['code'], language="lua")
-
-    st.divider()
-    if st.button("🗑️ RESET SESSION"):
-        st.session_state.messages = []
-        st.rerun()
-
-
-custom_avatar = "https://cdn-icons-png.flaticon.com/512/6033/6033716.png" # Image Meta Custom
-st.markdown(f"""
-    <div class="credit-header">
-        <div style="display:flex; align-items:center; gap:15px;">
-            <img src="{custom_avatar}" class="user-avatar">
-            <div>
-                <div style="font-weight: bold; font-size: 1.1rem;">{user_name}</div>
-                <div style="color:#ff4b4b; font-size:0.75rem; border:1px solid #ff4b4b; padding:1px 6px; border-radius:4px; display:inline-block;">{rank} ACCESS</div>
-            </div>
-        </div>
-        <div style="text-align:right;">
-            <div style="font-size: 0.7rem; color: #666;">RESSOURCES</div>
-            <div class="credit-amount">{credits_val}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-if rank == "FREE" and st.session_state.credits <= 0:
-    st.markdown("""
-        <div class="shop-container">
-            <h2 style="color:#ff4b4b;">OFFLINE - CRÉDITS ÉPUISÉS</h2>
-            <p>Upgrade ton rang pour continuer à utiliser RECON API.</p>
-            <div class="shop-card">
-                <h3>💠 PREMIUM</h3>
-                <div style="color:#ff4b4b; font-size:1.8rem; font-weight:bold;">4.99€</div>
-                <p style="font-size:0.8rem; color:#aaa;">• 500 Crédits / mois<br>• Accès Vision Prioritaire<br>• Modèles avancés</p>
-                <button style="width:100%; border-radius:5px; border:none; background:#ff4b4b; color:white; padding:10px;">S'abonner</button>
-            </div>
-            <div class="shop-card">
-                <h3 style="color:#ff4b4b;">👑 OWNER</h3>
-                <div style="color:#ff4b4b; font-size:1.8rem; font-weight:bold;">14.99€</div>
-                <p style="font-size:0.8rem; color:#aaa;">• Crédits ILLIMITÉS<br>• Accès à vie<br>• Support technique</p>
-                <button style="width:100%; border-radius:5px; border:none; background:#ff4b4b; color:white; padding:10px;">Acheter</button>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+    with t1:
+        e = st.text_input("Email")
+        p = st.text_input("Mot de passe", type="password")
+        if st.button("LOGIN"):
+            auth = sign_in(e, p)
+            if auth:
+                st.session_state.user = auth.user
+                st.rerun()
+                
+    with t2:
+        ne = st.text_input("Email (Vérification requise)")
+        nu = st.text_input("Pseudo OSINT")
+        np = st.text_input("Mot de passe ", type="password")
+        if st.button("REGISTER"):
+            if sign_up(ne, np, nu):
+                st.success("Vérifie tes emails !")
 else:
-    # Affichage de la discussion
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    
+    profile = supabase.table("profiles").select("*").eq("id", st.session_state.user.id).single().execute().data
+    
+    
+    with st.sidebar:
+        st.image("https://www.kali.org/images/kali-logo.svg", width=180)
+        st.markdown(f"**USER:** `{profile['username']}`")
+        st.markdown(f"**RANK:** `{profile['rank']}`")
+        
+        menu = st.radio("SUDO MENU", ["Terminal OSINT", "Admin Panel" if profile['rank'] == 'ROOT' else None])
+        
+        st.divider()
+        st.subheader("📷 Optical Scanner")
+        uploaded_file = st.file_uploader("Upload Capture (Metadata/Reverse)", type=["png", "jpg", "jpeg"])
+        
+        if st.button("LOGOUT"):
+            st.session_state.user = None
+            st.rerun()
 
     
-    if prompt := st.chat_input("Initialisation de la commande..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    if menu == "Admin Panel" and profile['rank'] == 'ROOT':
+        st.title("🛰️ Control Center")
+        users = supabase.table("profiles").select("*").execute().data
+        for u in users:
+            c1, c2, c3 = st.columns([2, 2, 1])
+            c1.write(f"ID: {u['username']}")
+            new_r = c2.selectbox("Rank", ["USER", "PREMIUM", "ROOT"], key=u['id'], index=["USER", "PREMIUM", "ROOT"].index(u['rank']))
+            if c3.button("Update", key=f"btn_{u['id']}"):
+                supabase.table("profiles").update({"rank": new_r}).eq("id", u['id']).execute()
+                st.rerun()
 
-        with st.chat_message("assistant"):
-            with st.spinner("SCANNING..."):
-                try:
-                    # Choix du modèle (Vision ou Texte)
-                    if uploaded_file:
-                        base64_image = encode_image(uploaded_file)
-                        model_choice = "llama-3.2-11b-vision-preview"
-                        user_content = [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                        ]
-                    else:
-                        model_choice = "llama-3.3-70b-versatile"
-                        user_content = prompt
+    
+    else:
+        st.markdown(f"""
+            <div class="kali-panel">
+                <span style="color:#7aa2f7;">root@reconxai</span>:<span style="color:#bb9af7;">~#</span> 
+                Credits: <span style="color:#9ece6a;">{profile['credits'] if profile['rank'] != 'ROOT' else '∞'}</span>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        
+        cols = st.columns(4)
+        p_ready = ""
+        if cols[0].button("🌐 IP/WHOIS"): p_ready = "Effectue un scan profond sur l'IP/Domaine : "
+        if cols[1].button("📱 MOBILE"): p_ready = "Analyse OSINT du numéro de téléphone : "
+        if cols[2].button("🕵️‍♂️ SHERLOCK"): p_ready = "Recherche le pseudonyme sur les réseaux : "
+        if cols[3].button("📍 GEO-INT"): p_ready = "Analyse de géolocalisation pour : "
 
-                    completion = client.chat.completions.create(
-                        model=model_choice,
-                        messages=[{"role": "system", "content": "Tu es ReconAI. Expert Roblox Luau. Réponds en Luau technique."}] + 
-                                 [{"role": "user", "content": user_content}]
-                    )
-                    
-                    full_response = completion.choices[0].message.content
-                    st.markdown(full_response)
-                    st.session_state.messages.append({"role": "assistant", "content": full_response})
-                    
-                    # Sauvegarde logs et crédits
-                    st.session_state.full_history.append({
-                        "time": datetime.datetime.now().strftime("%H:%M"),
-                        "query": "Vision" if uploaded_file else prompt[:20],
-                        "code": full_response
-                    })
-                    
-                    if rank == "FREE":
-                        st.session_state.credits -= 1
-                    
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"SYSTEM ERROR: {e}")
+        
+        if "messages" not in st.session_state: st.session_state.messages = []
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]): st.markdown(msg["content"])
+
+        
+        if user_input := st.chat_input("Exécuter une commande..."):
+            if profile['rank'] != 'ROOT' and profile['credits'] <= 0:
+                st.error("ACCÈS REFUSÉ : Crédits épuisés.")
+            else:
+                prompt = p_ready + user_input
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                with st.chat_message("user"): st.markdown(prompt)
+
+                with st.chat_message("assistant"):
+                    with st.spinner("Analyse en cours..."):
+                        
+                        model = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
+                        
+                        if uploaded_file:
+                            b64_img = encode_image(uploaded_file)
+                            content = [
+                                {"type": "text", "text": prompt},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}}
+                            ]
+                        else:
+                            content = prompt
+
+                        
+                        res = client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "system", "content": """Tu es le terminal ReconXAI.
+                            Expert en investigation numérique (OSINT), Cybersécurité et Forensics.
+                            - Réponds de façon technique et froide.
+                            - Utilise des tableaux pour les données.
+                            - Donne des commandes réelles (Nmap, Sherlock, Whois)."""}] + 
+                            [{"role": "user", "content": content}]
+                        )
+                        
+                        ans = res.choices[0].message.content
+                        st.markdown(ans)
+                        st.session_state.messages.append({"role": "assistant", "content": ans})
+                        
+                        
+                        if profile['rank'] != 'ROOT':
+                            supabase.table("profiles").update({"credits": profile['credits'] - 1}).eq("id", profile['id']).execute()
+                        st.rerun()
