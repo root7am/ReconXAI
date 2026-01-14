@@ -1,2 +1,2 @@
-# ReconXAI
-Some AI for Osint
+# ReconAI
+Specialised in Roblox Scripting
